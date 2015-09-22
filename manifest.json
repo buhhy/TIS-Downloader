@@ -3,10 +3,16 @@
   "description": "Automatically downloads an entire TIS manual to disk.",
   "version": "0.1",
   "manifest_version": 2,
-  "app": {
-    "background": {
-      "scripts": [ "jquery.js", "dl.js" ]
-    }
+  "background": {
+    "scripts": [ "jquery.js", "dl.js" ]
   },
+  "browser_action": {
+    "default_icon": "lexus_icon_38.png"
+  },
+  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
+  "permissions": [
+    "cookies",
+    "https://techinfo.toyota.com/"
+  ],
   "icons": { "16": "lexus_icon_16.png", "128": "lexus_icon_128.png" }
 }
