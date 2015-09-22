@@ -4,7 +4,7 @@
   "version": "0.1",
   "manifest_version": 2,
   "background": {
-    "scripts": [ "background.js" ]
+    "scripts": [ "background.js", "jquery.js", "fetcher.js" ]
   },
   "browser_action": {
     "default_icon": "lexus_icon_38.png"
@@ -12,10 +12,8 @@
   "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
   "permissions": [
     "cookies",
-    "https://techinfo.toyota.com/",
-    {
-      "fileSystem": ["write", "retainEntries", "directory"]
-    }
+    "http://*/",
+    "https://*/"
   ],
   "icons": { "16": "lexus_icon_16.png", "128": "lexus_icon_128.png" }
 }
