@@ -14,6 +14,10 @@ var BLOB_TYPE = 3;
 // Cache for checking which resources have loaded
 var globalLoadedResources = {};
 
+function downloadEntireManual(callback) {
+  downloadNavData(callback);
+}
+
 function downloadNavData(callback) {
   fetchNavData(startingPoint, function (data) {
     // Top-level section (General, Brake, Drivetrain, etc) DOM tree isn't loaded until they are
@@ -35,7 +39,7 @@ function downloadNavData(callback) {
           allNavData[index] = data;
           count --;
           if (count === 0)
-            callback(allNavData);
+            parseAllNavData(allNavData, callback);
         });
       }
     });
@@ -57,11 +61,22 @@ function fetchNavData(url, callback) {
   });
 }
 
-function fetchPageData(absoluteUrl) {
+function fetchPageData(absoluteUrl, callback) {
   absoluteUrl = removeUrlFluff(absoluteUrl) + "?locale=en";
+
+  var remainingCallCount = 0; // synchronizer count
+  var doneCallCount = 0;
+
+  var finalCallback = function (callCount) {
+    remainingCallCount --;
+    doneCallCount += callCount;
+    if (remainingCallCount === 0)
+      callback(remainingCallCount);
+  };
 
   var callback = function (absoluteUrl, loadedPage) {
     var container = $("<div></div>");
+
     container.html(loadedPage);
 
     // Check for and load missing resources as blobs
@@ -70,8 +85,10 @@ function fetchPageData(absoluteUrl) {
         var absoluteUrl = hostName + url;
         if (!existsInCache(absoluteUrl)) {
           // Fetch and save to cache
+          remainingCallCount ++;
           blobGetRequest(absoluteUrl, function (data) {
             writeToCache(absoluteUrl, BLOB_TYPE, data);
+            finalCallback(1);
           });
         }
       });
@@ -82,8 +99,10 @@ function fetchPageData(absoluteUrl) {
         var absoluteUrl = hostName + url;
         if (!existsInCache(absoluteUrl)) {
           // Fetch and save to cache
+          remainingCallCount ++;
           $.ajax(absoluteUrl).done(function (results) {
             writeToCache(absoluteUrl, CSS_TYPE, results);
+            finalCallback(1);
           });
         }
       });
@@ -94,7 +113,10 @@ function fetchPageData(absoluteUrl) {
         var absoluteUrl = hostName + url;
         if (!existsInCache(absoluteUrl)) {
           // Recursively fetch page and save to cache
-          fetchPageData(absoluteUrl);
+          remainingCallCount ++;
+          fetchPageData(absoluteUrl, function (callCount) {
+            finalCallback(callCount);
+          });
         }
       });
 
@@ -124,7 +146,11 @@ function downloadPages(navTree) {
   var recurseTree = function (node) {
     if (node.isLeaf && !ran) {
       console.log(node.url);
-      fetchPageData(hostName + node.url);
+      fetchPageData(hostName + node.url, function (callCount) {
+        console.log("Fetched " + callCount + " resources for url `" + node.url + "`");
+
+        // set relative url to rewrite to once on the hard disk
+      });
       
       ran = true;
     }

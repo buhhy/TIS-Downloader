@@ -1,3 +1,5 @@
+var extensionId = "omebceocojbigcbancdjmpekobelcjgg";
+
 $("#folderPicker").click(function (evt) {
   chrome.fileSystem.chooseEntry({
     type: "openDirectory"
@@ -10,7 +12,11 @@ $("#folderPicker").click(function (evt) {
 });
 
 $("#saveButton").click(function (evt) {
-  downloadNavData(parseAllNavData);
+  chrome.runtime.sendMessage(extensionId, {}, function (response) {
+    var headerTree = response.headerTree;
+    var resourceCache = response.resourceCache;
+    console.log("handshake complete!");
+  });
 });
 
 function writeFile(dirEntry, fileName, content) {

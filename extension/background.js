@@ -1,4 +1,17 @@
+var appId = "lmonlndnffkpimppiabjefgdlmnbmlbj";
+
 chrome.browserAction.onClicked.addListener(function (tab) {
   clearCache();
-  downloadNavData(parseAllNavData);
+  downloadEntireManual(function (headerTree, resourceCache) {
+    console.log("Done downloading " + resourceCache.keySet().length + " resources");
+  });
+});
+
+chrome.runtime.onMessageExternal.addListener(function (request, sender, sendResponse) {
+  if (sender.id == appId) {
+    sendResponse({
+      headerTree: 1,
+      resourceCache: 2
+    });
+  }
 });

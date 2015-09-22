@@ -1,5 +1,6 @@
 // id : kenmgdkhiojodocphkkjippblapdpopf
 {
+  "key": "kenmgdkhiojodocphkkjippblapdpopf",
   "name": "TIS Manual Fetcher",
   "description": "Automatically fetches an entire TIS manual to memory.",
   "version": "0.1",
