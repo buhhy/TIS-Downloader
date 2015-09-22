@@ -1,0 +1,22 @@
+{
+  "name": "TIS Manual Downloader App",
+  "description": "Downloads the fetched TIS manuals to disk.",
+  "version": "0.1",
+  "manifest_version": 2,
+  "app": {
+    "background": {
+      "scripts": [ "background.js" ]
+    }
+  },
+  "sandbox": {
+    "pages": [ "dl.html" ],
+    "content_security_policy": "sandbox allow-scripts; script-src 'self' 'unsafe-eval'; object-src 'self'"
+  },
+  "permissions": [
+    "https://techinfo.toyota.com/",
+    {
+      "fileSystem": ["write", "retainEntries", "directory"]
+    }
+  ],
+  "icons": { "16": "lexus_icon_16.png", "128": "lexus_icon_128.png" }
+}

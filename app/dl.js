@@ -1,4 +1,5 @@
-var rootUrl = "https://techinfo.toyota.com/t3Portal/resources/jsp/siviewer/";
+var hostName = "https://techinfo.toyota.com";
+var navUrl = hostName + "/t3Portal/resources/jsp/siviewer/";
 var startingPoint = "nav.jsp?"
     + "dir=rm%2FRM30G0U&openSource=null&href=xhtml%2FRM1000000006BKQ.html&t3Id=RM1000000006BKQ&"
     + "pubNo=RM30G0U&docId=1974527&objectType=rm&locale=en&home=null&docTitle=null&modelyear=2015";
@@ -11,9 +12,7 @@ function downloadNavData(callback) {
     // clicked, and even then only 1 can be open at a time. Hence we need to loop through each top
     // level section to get the sub-sections. Once a sub-section is loaded, the entire sub-section
     // tree is populated at once.
-    var allNavUrls = data.filter(function (elem) {
-      return isArray(elem);
-    }).map(function (elem) {
+    var allNavUrls = data.filter(arrayFilter).map(function (elem) {
       return elem[1];
     });
     var count = 0;
@@ -37,7 +36,7 @@ function downloadNavData(callback) {
 
 function fetchNavData(url, callback) {
   $.ajax({
-    url: rootUrl + url,
+    url: navUrl + url,
     method: "GET"
   }).done(function (results) {
     $bufferFrame.html(results.trim());
@@ -51,6 +50,18 @@ function fetchNavData(url, callback) {
   });
 }
 
+function downloadPages(navTree) {
+  var recurseTree = function (node) {
+    if (node.isLeaf) {
+      console.log(node.url);
+    }
+
+    node.children.forEach(recurseTree);
+  };
+
+  recurseTree(navTree);
+}
+
 function parseAllNavData(results) {
   var navs = results.map(function (result) {
     return result.find(function (elem) {
@@ -58,13 +69,43 @@ function parseAllNavData(results) {
     });
   });
 
-  console.log(navs);
+  var recurseTree = function (node) {
+    return {
+      title: node[0],
+      url: node[1] || undefined,
+      isLeaf: !!node[1],
+      children: node.filter(arrayFilter).map(recurseTree)
+    };
+  };
+
+  var parsedTree = {
+    title: "root",
+    isRoot: true,
+    isLeaf: false,
+    children: navs.map(recurseTree)
+  };
+
+  console.log(parsedTree);
+
+  downloadPages(parsedTree);
 }
 
 function isArray(obj) {
   return obj.constructor === Array;
 }
 
-chrome.browserAction.onClicked.addListener(function (tab) {
+function arrayFilter(elem) {
+  return isArray(elem);
+}
+
+$("#folderPicker").click(function (evt) {
+  chrome.fileSystem.chooseEntry({
+    type: "openDirectory"
+  }, function (entry) {
+    console.log(entry);
+  });
+});
+
+$("#saveButton").click(function (evt) {
   downloadNavData(parseAllNavData);
 });
