@@ -11,11 +11,17 @@ var HTML_TYPE = 1;
 var CSS_TYPE = 2;
 var BLOB_TYPE = 3;
 
+var HTML_FOLDER = "pages/"
+var IMG_FOLDER = "img/"
+var CSS_FOLDER = "css/"
+
 // Cache for checking which resources have loaded
 var globalLoadedResources = {};
 
 function downloadEntireManual(callback) {
-  downloadNavData(callback);
+  downloadNavData(function (navTree) {
+    callback(navTree, globalLoadedResources);
+  });
 }
 
 function downloadNavData(callback) {
@@ -88,6 +94,7 @@ function fetchPageData(absoluteUrl, callback) {
           remainingCallCount ++;
           blobGetRequest(absoluteUrl, function (data) {
             writeToCache(absoluteUrl, BLOB_TYPE, data);
+            setNewPathInCache(absoluteUrl, IMG_FOLDER, extractFileNameFromUrl(url));
             finalCallback(1);
           });
         }
@@ -102,6 +109,7 @@ function fetchPageData(absoluteUrl, callback) {
           remainingCallCount ++;
           $.ajax(absoluteUrl).done(function (results) {
             writeToCache(absoluteUrl, CSS_TYPE, results);
+            setNewPathInCache(absoluteUrl, CSS_FOLDER, extractFileNameFromUrl(url));
             finalCallback(1);
           });
         }
@@ -115,6 +123,7 @@ function fetchPageData(absoluteUrl, callback) {
           // Recursively fetch page and save to cache
           remainingCallCount ++;
           fetchPageData(absoluteUrl, function (callCount) {
+            setNewPathInCache(absoluteUrl, HTML_FOLDER, undefined);
             finalCallback(callCount);
           });
         }
@@ -141,27 +150,38 @@ function fetchPageData(absoluteUrl, callback) {
   });
 }
 
-function downloadPages(navTree) {
-  var ran = false;
+function downloadPages(navTree, callback) {
+  var tempCount = 0;
+  var remainingCallCount = 0;
+
   var recurseTree = function (node) {
-    if (node.isLeaf && !ran) {
-      console.log(node.url);
-      fetchPageData(hostName + node.url, function (callCount) {
-        console.log("Fetched " + callCount + " resources for url `" + node.url + "`");
+    var nodePathName = formatSectionNameForUrl(node.title);
 
-        // set relative url to rewrite to once on the hard disk
-      });
-      
-      ran = true;
+    if (node.isLeaf) {
+      if (tempCount <= 5) {
+        var absoluteUrl = node.url;
+
+        remainingCallCount ++;
+        fetchPageData(absoluteUrl, function (callCount) {
+          console.log("Fetched " + callCount + " resources for url `" + node.url + "`");
+
+          // set relative url to rewrite to once on the hard disk
+          setNewPathInCache(absoluteUrl, HTML_FOLDER, nodePathName + ".html");
+          remainingCallCount --;
+          if (remainingCallCount === 0)
+            callback(navTree);
+        });
+        tempCount ++;
+      }
+    } else {
+      node.children.forEach(recurseTree);
     }
-
-    node.children.forEach(recurseTree);
   };
 
   recurseTree(navTree);
 }
 
-function parseAllNavData(results) {
+function parseAllNavData(results, callback) {
   var navs = results.map(function (result) {
     return result.find(function (elem) {
       return isArray(elem) && elem.length > 3;
@@ -171,7 +191,7 @@ function parseAllNavData(results) {
   var recurseTree = function (node) {
     return {
       title: node[0],
-      url: node[1] || undefined,
+      url: node[1] ? hostName + node[1] : undefined,
       isLeaf: !!node[1],
       children: node.filter(arrayFilter).map(recurseTree)
     };
@@ -184,9 +204,7 @@ function parseAllNavData(results) {
     children: navs.map(recurseTree)
   };
 
-  console.log(parsedTree);
-
-  downloadPages(parsedTree);
+  downloadPages(parsedTree, callback);
 }
 
 /**
@@ -240,6 +258,18 @@ function processUrl(absoluteUrl) {
   return removeUrlFluff(processedUrl);
 }
 
+function extractFileNameFromUrl(url) {
+  var spos = url.lastIndexOf("/");
+  if (spos !== -1)
+    return url.slice(spos + 1);
+  return url;
+}
+
+function formatSectionNameForUrl(name) {
+  // change to lower case, replace spaces, and remove all non alpha-numeric characters
+  return name.toLowerCase().replace(" ", "_").replace(/\W/g, '');
+}
+
 /**
  * Cache functions
  */
@@ -253,6 +283,15 @@ function writeToCache(absoluteUrl, type, content) {
 
 function existsInCache(absoluteUrl) {
   return globalLoadedResources[processUrl(absoluteUrl)] !== undefined;
+}
+
+function setNewPathInCache(absoluteUrl, newFolderPath, newFileName) {
+  var purl = processUrl(absoluteUrl);
+  if (globalLoadedResources[purl] !== undefined) {
+    globalLoadedResources[purl].newFolderPath = newFolderPath;
+    globalLoadedResources[purl].newFileName = newFileName;
+    globalLoadedResources[purl].fullPath = newFolderPath + newFileName;
+  }
 }
 
 function clearCache() {

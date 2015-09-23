@@ -9,9 +9,12 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
 chrome.runtime.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (sender.id == appId) {
-    sendResponse({
-      headerTree: 1,
-      resourceCache: 2
-    });
+    downloadEntireManual(function (headerTree, resourceCache) {
+      sendResponse({
+        hostName: hostName,
+        headerTree: headerTree,
+        resourceCache: resourceCache
+      });
+    }
   }
 });
