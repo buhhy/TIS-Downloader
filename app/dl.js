@@ -1,5 +1,7 @@
 var extensionId = "omebceocojbigcbancdjmpekobelcjgg";
 
+var hostName = "https://localhost:1234";
+
 var testNavTree = {
   title: "root",
   isRoot: true,
@@ -7,25 +9,25 @@ var testNavTree = {
   children: [
     {
       title: "section 1",
-      url: "https://localhost:1234/section1",
+      url: hostName + "/section1",
       isLeaf: false,
       children: [
         {
           title: "sub section 1",
-          url: "https://localhost:1234/subsection1",
+          url: hostName + "/subsection1",
           isLeaf: false,
           children: [
             {
               title: "leaf item 1",
-              url: "https://localhost:1234/pages/leaf1.html",
+              url: hostName + "/pages/leaf1.html",
               isLeaf: true
             }, {
               title: "leaf item 2",
-              url: "https://localhost:1234/pages/leaf2.html",
+              url: hostName + "/pages/leaf2.html",
               isLeaf: true
             }, {
               title: "leaf item 3",
-              url: "https://localhost:1234/pages/leaf3.html",
+              url: hostName + "/pages/leaf3.html",
               isLeaf: true
             }
           ]
@@ -33,17 +35,17 @@ var testNavTree = {
       ]
     }, {
       title: "section 2",
-      url: "https://localhost:1234/section3",
+      url: hostName + "/section3",
       isLeaf: false,
       children: [
         {
           title: "leaf item 4",
-          url: "https://localhost:1234/pages/leaf4.html",
+          url: hostName + "/pages/leaf4.html",
           isLeaf: true
         },
         {
           title: "leaf item 5",
-          url: "https://localhost:1234/pages/leaf5.html",
+          url: hostName + "/pages/leaf5.html",
           isLeaf: true
         }
       ]
@@ -52,27 +54,27 @@ var testNavTree = {
 };
 
 var testResourceCache = {
-  "https://localhost:1234/pages/leaf1.html": {
+  hostName + "/pages/leaf1.html": {
     type: 1,
     content: "<html><body><span>page 1</span><a href='/pages/leaf2.html'>test link 2</a></body></html>"
   },
-  "https://localhost:1234/pages/leaf2.html": {
+  hostName + "/pages/leaf2.html": {
     type: 1,
-    content: "<html><body><span>page 1</span><a href='/pages/leaf3.html'>test link 3</a></body></html>"
+    content: "<html><head><link href='/css/abc/css_file1' /></head><body><span>page 1</span><img src='/imgs/def/randomImage1.png' /><a href='/pages/leaf3.html'>test link 3</a><a href='/pages/leaf4.html'>test link 4</a></body></html>"
   },
-  "https://localhost:1234/pages/leaf3.html": {
+  hostName + "/pages/leaf3.html": {
     type: 1,
     content: "<html><body><span>page 1</span><a href='/pages/leaf4.html'>test link 4</a></body></html>"
   },
-  "https://localhost:1234/pages/leaf4.html": {
+  hostName + "/pages/leaf4.html": {
     type: 1,
     content: "<html><body><span>page 1</span><a href='/pages/leaf5.html'>test link 5</a></body></html>"
   },
-  "https://localhost:1234/pages/leaf5.html": {
+  hostName + "/pages/leaf5.html": {
     type: 1,
-    content: "<html><body><span>page 1</span><a href='/pages/leaf1.html'>test link 1</a></body></html>"
+    content: "<html><link href='/css/abc/css_file2' /><body><span>page 1</span><a href='/pages/leaf1.html'>test link 1</a></body></html>"
   },
-}
+};
 
 $("#folderPicker").click(function (evt) {
   chrome.fileSystem.chooseEntry({
@@ -136,6 +138,28 @@ function copyTemplateFiles(callback) {
         callback(apiResults);
     });
   });
+}
+
+function replaceUrlsInHtml(html, resourceCache) {
+  var hrefMatches = regexAllMatches(html, /href\s?=\s?(".+?"|'.+?')/g);
+  var srcMatches = regexAllMatches(html, /src\s?=\s?(".+?"|'.+?')/g);
+}
+
+function regexAllMatches(text, regex) {
+  var match;
+  var indices= [];
+
+  while (match = regex.exec(text)) {
+    // remove the quotation marks
+    var url = match[1].slice(1, -1);
+
+    indices.push({
+      start: match.index + 1,
+      end: match.index + url.length,
+      matched: url
+    });
+  }
+  return indices;
 }
 
 function writeFile(dirEntry, fileName, content) {
