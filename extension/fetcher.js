@@ -11,9 +11,9 @@ var HTML_TYPE = 1;
 var CSS_TYPE = 2;
 var BLOB_TYPE = 3;
 
-var HTML_FOLDER = "pages/"
-var IMG_FOLDER = "img/"
-var CSS_FOLDER = "css/"
+var HTML_FOLDER = [ "pages" ]
+var IMG_FOLDER = [ "img" ]
+var CSS_FOLDER = [ "css" ]
 
 // Cache for checking which resources have loaded
 var globalLoadedResources = {};
@@ -285,13 +285,10 @@ function existsInCache(absoluteUrl) {
   return globalLoadedResources[processUrl(absoluteUrl)] !== undefined;
 }
 
-function setNewPathInCache(absoluteUrl, newFolderPath, newFileName) {
+function setNewPathInCache(absoluteUrl, newFolderPathArray, newFileName) {
   var purl = processUrl(absoluteUrl);
-  if (globalLoadedResources[purl] !== undefined) {
-    globalLoadedResources[purl].newFolderPath = newFolderPath;
-    globalLoadedResources[purl].newFileName = newFileName;
-    globalLoadedResources[purl].fullPath = newFolderPath + newFileName;
-  }
+  if (globalLoadedResources[purl] !== undefined)
+    globalLoadedResources[purl].newFilePath = newFolderPathArray.concat([ newFileName ]);
 }
 
 function clearCache() {
