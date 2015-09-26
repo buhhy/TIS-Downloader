@@ -6,7 +6,7 @@
   "version": "0.1",
   "manifest_version": 2,
   "background": {
-    "scripts": [ "background.js", "jquery.js", "fetcher.js" ]
+    "scripts": [ "background.js", "jquery.js", "test_data.js", "fetcher.js" ]
   },
   "browser_action": {
     "default_icon": "lexus_icon_38.png"

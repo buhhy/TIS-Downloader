@@ -9,12 +9,18 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
 chrome.runtime.onMessageExternal.addListener(function (request, sender, sendResponse) {
   if (sender.id == appId) {
-    downloadEntireManual(function (headerTree, resourceCache) {
-      sendResponse({
-        hostName: hostName,
-        headerTree: headerTree,
-        resourceCache: resourceCache
-      });
-    }
+    // downloadEntireManual(function (headerTree, resourceCache) {
+    //   sendResponse({
+    //     hostName: hostName,
+    //     headerTree: headerTree,
+    //     resourceCache: resourceCache
+    //   });
+    // });
+    
+    sendResponse({
+      hostName: testHostName,
+      headerTree: testNavTree,
+      resourceCache: testResourceCache
+    });
   }
 });
