@@ -120,7 +120,7 @@ $("#saveButton").click(function (evt) {
         console.log("Writing template files to `" + path + "`");
       });
 
-      var navJsonFile = generateNavJsonFile(testNavTree);
+      var navJsonFile = generateNavJsonFile(testNavTree, testResourceCache);
 
       templateFiles.forEach(function (file) {
         writeFile(fileEntry, file.name, file.content);
@@ -140,15 +140,34 @@ function requestManualData(callback) {
   });
 }
 
-function generateNavJsonFile(navTree) {
+function generateNavJsonFile(navTree, resourceCache) {
+  var recurse = function (node) {
+    var newNode = {
+      title: node.title,
+      isLeaf: node.isLeaf,
+      isRoot: node.isRoot
+    };
+
+    if (node.isLeaf) {
+      var resource = resourceCache[node.url];
+      if (resource === undefined)
+        return null
+      newNode.url = makeFullPath(resource.newFilePath);
+    } else {
+      newNode.children = node.children.map(recurse).filter(function (x) { return x !== null; });
+    }
+
+    return newNode;
+  };
+
   return {
     name: "nav.json",
-    content: JSON.stringify(navTree, undefined, 2)
+    content: JSON.stringify(recurse(navTree, resourceCache), undefined, 2)
   };
 }
 
 function copyTemplateFiles(callback) {
-  var copyFiles = [ "index.html", "index.css", "index.js" ];
+  var copyFiles = [ "index.html", "index.css", "index.js", "jquery.js" ];
   var remainingApiCalls = copyFiles.length;
   var apiResults = [];
 

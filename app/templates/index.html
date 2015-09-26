@@ -5,6 +5,34 @@
     <title></title>
   </head>
   <body>
-    Hello world!
+    <header class="header">
+    </header>
+    <section class="body">
+      <nav class="left-nav">
+        <ul id="rootNavNode" class="root-nav"></ul>
+      </nav>
+      <section class="content-container">
+        <iframe id="contentFrame" name="contentFrame" class="content-frame" src=""></iframe>
+      </section>
+    </section>
+    <template id="navNodeTemplate">
+      <li class="nav-item">
+        <div class="nav-text">
+          <span data-id="navExpandButton" class="nav-expand-btn"></span>
+          <a target="contentFrame" data-id="navItemTitle" class="nav-item-title"></a>
+        </div>
+        <ul data-id="navChildren" class="nav-children"></ul>
+      </li>
+    </template>
+    <template id="navLeafTemplate">
+      <li class="nav-item">
+        <div class="nav-text">
+          <span class="nav-leaf-icon"></span>
+          <a target="contentFrame" data-id="navItemTitle" class="nav-item-title"></a>
+        </div>
+      </li>
+    </template>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="index.js"></script>
   </body>
 </html>
