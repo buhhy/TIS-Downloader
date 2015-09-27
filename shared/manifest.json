@@ -1,0 +1,12 @@
+{
+  "key": "babijaaknmeolahihaiobncgkmocfpfl",
+  "version": "0.1",
+  "name": "Shared",
+  "manifest_version": 2,
+  "export": {
+    "whitelist": [
+      "omebceocojbigcbancdjmpekobelcjgg",
+      "lmonlndnffkpimppiabjefgdlmnbmlbj"
+    ]
+  }
+}

@@ -5,8 +5,11 @@
   "description": "Automatically fetches an entire TIS manual to memory.",
   "version": "0.1",
   "manifest_version": 2,
+  "import": [
+    { "id": "fjbolkimmebngbmcffakddebclpgcaci" }
+  ],
   "background": {
-    "scripts": [ "background.js", "jquery.js", "test_data.js", "fetcher.js" ]
+    "page": "page.html"
   },
   "browser_action": {
     "default_icon": "lexus_icon_38.png"

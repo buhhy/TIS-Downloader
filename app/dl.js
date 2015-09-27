@@ -1,77 +1,148 @@
 var extensionId = "omebceocojbigcbancdjmpekobelcjgg";
 
-var HTML_TYPE = 1;
-var CSS_TYPE = 2;
-var BLOB_TYPE = 3;
+var currentFileEntry;
 
-$("#folderPicker").click(function (evt) {
-  chrome.fileSystem.chooseEntry({
-    type: "openDirectory"
-  }, function (fileEntry) {
-    chrome.fileSystem.getDisplayPath(fileEntry, function (path) {
-      console.log(path);
-    });
-    writeFile(fileEntry, "amrapa.txt", "abcdef")
-  });
-});
+chrome.runtime.onMessageExternal.addListener(function (request, sender, sendResponse) {
+  if (sender.id === extensionId) {
+    if (request.type === "saveImage") {
+      if (currentFileEntry) {
+        var imgData = request.data;
+        var imgName = getFileName(imgData.newFilePath);
+        console.log("Received request to save image `" + imgName + "`");
 
-$("#saveButton").click(function (evt) {
-  copyTemplateFiles(function (templateFiles) {
-    chrome.fileSystem.chooseEntry({
-      type: "openDirectory"
-    }, function (fileEntry) {
-      requestManualData(function (headerTree, resourceCache, hostName) {
-        chrome.fileSystem.getDisplayPath(fileEntry, function (path) {
-          console.log("Writing template files to `" + path + "`");
-        });
-
-        var navJsonFile = generateNavJsonFile(headerTree, resourceCache);
-
-        templateFiles.forEach(function (file) {
-          writeFile(fileEntry, file.name, file.content);
-        });
-        writeFile(fileEntry, navJsonFile.name, navJsonFile.content);
-        writeResourceFiles(fileEntry, resourceCache, hostName);
-      });
-    });
-  });
-});
-
-function requestManualData(callback) {
-  chrome.runtime.sendMessage(extensionId, {}, function (response) {
-    var headerTree = response.headerTree;
-    var resourceCache = response.resourceCache;
-    var hostName = response.hostName;
-    console.log("Data retrieval successful!");
-    callback(headerTree, resourceCache, hostName);
-  });
-}
-
-function generateNavJsonFile(navTree, resourceCache) {
-  var recurse = function (node) {
-    var newNode = {
-      title: node.title,
-      isLeaf: node.isLeaf,
-      isRoot: node.isRoot
-    };
-
-    if (node.isLeaf) {
-      var resource = resourceCache[node.url];
-      if (resource === undefined)
-        return null
-      newNode.url = makeFullPath(resource.newFilePath);
-    } else {
-      newNode.children = node.children.map(recurse).filter(function (x) { return x !== null; });
+        // Uint8Array is mangled by the extension -> app communication to an index -> value map
+        var array = [];
+        for (var key in imgData.content) {
+          if (imgData.content.hasOwnProperty(key))
+            array[key] = imgData.content[key];
+        }
+        writeFile(
+            dirEntry,
+            getFileName(imgData.newFilePath),
+            new Uint8Array(array),
+            function () {
+              sendResponse({ success: true });
+            },
+            function () {
+              console.error("Write error while saving image `" + imgName + "`");
+              sendResponse({ success: false });
+            });
+      } else {
+        console.error("No current file error detected...");
+        sendResponse({ success: false });
+      }
     }
 
-    return newNode;
+    return true;
+  }
+});
+
+$("#saveButton").click(function () {
+  chrome.fileSystem.chooseEntry({
+    type: "openDirectory"
+  }, function (dirEntry) {
+    currentFileEntry = dirEntry;
+
+    copyTemplateFiles(function (templateFiles) {
+      templateFiles.forEach(function (file) {
+        writeFile(dirEntry, file.name, file.content);
+      });
+    });
+
+    requestManualNavData(function (navTreeRoot, hostName) {
+      console.log(navTreeRoot);
+      console.log(hostName);
+
+      var navJsonFile = generateNavJsonFile(navTreeRoot);
+      writeFile(dirEntry, navJsonFile.name, navJsonFile.content);
+
+      requestManualAllPageData(dirEntry, hostName, navTreeRoot, function () { });
+    });
+
+    //requestManualData(function (headerTree, resourceCache, hostName) {
+    //  chrome.fileSystem.getDisplayPath(fileEntry, function (path) {
+    //    console.log("Writing template files to `" + path + "`");
+    //  });
+    //
+
+    //  writeResourceFiles(fileEntry, resourceCache, hostName);
+    //});
+  });
+});
+
+function requestManualNavData(callback) {
+  console.log("Retrieving navigation tree catalog...");
+  chrome.runtime.sendMessage(
+      extensionId,
+      { type: "fetchNav" },
+      function (response) {
+        console.log("Navigation data retrieval successful!");
+        callback(response.navTree, response.hostName);
+      });
+}
+
+function requestManualPageData(dirEntry, hostName, pageNavEntry, callback) {
+  console.log("Retrieving page `" + pageNavEntry.title + "`...");
+  chrome.runtime.sendMessage(
+      extensionId,
+      {
+        type: "fetchPage",
+        pageNavEntry: pageNavEntry
+      },
+      function (response) {
+        withFolder(dirEntry, pageNavEntry.folderPathArray, function (dirEntry) {
+          writeFile(
+              dirEntry,
+              pageNavEntry.fileName,
+              replaceUrlsInHtml(
+                  response.pageContent,
+                  response.pageResourceEntry,
+                  new UrlCache(response.localCacheMap),
+                  hostName),
+              callback);
+        });
+      });
+}
+
+function requestManualAllPageData(dirEntry, hostName, pageNavRoot, callback) {
+  var ajaxCount = 0;
+
+  var tempRunCount = 0;
+
+  var finalCallback = function () {
+    ajaxCount --;
+    if (ajaxCount === 0)
+      callback();
   };
 
-  return {
-    name: "nav.json",
-    content: JSON.stringify(recurse(navTree, resourceCache), undefined, 2)
+  var recurseFn = function (entry) {
+    if (entry.isLeaf) {
+      ajaxCount ++;
+      tempRunCount ++;
+
+      if (tempRunCount < 2)
+      requestManualPageData(dirEntry, hostName, entry, finalCallback);
+    } else {
+      entry.children.forEach(recurseFn);
+    }
   };
+
+  recurseFn(pageNavRoot);
 }
+
+
+
+
+
+//function requestManualData(callback) {
+//  chrome.runtime.sendMessage(extensionId, {}, function (response) {
+//    var headerTree = response.headerTree;
+//    var resourceCache = response.resourceCache;
+//    var hostName = response.hostName;
+//    console.log("Data retrieval successful!");
+//    callback(headerTree, resourceCache, hostName);
+//  });
+//}
 
 function copyTemplateFiles(callback) {
   var copyFiles = [ "index.html", "index.css", "index.js", "jquery.js" ];
@@ -91,53 +162,74 @@ function copyTemplateFiles(callback) {
   });
 }
 
-function writeResourceFiles(dirEntry, resourceCache, hostName) {
-  for (var url in resourceCache) {
-    if (resourceCache.hasOwnProperty(url)) {
-      (function (url) {
-        var value = resourceCache[url];
-        dirEntry.getDirectory(
-          makeFullPath(getFolderPath(value.newFilePath)),
-          { create: true },
-          function (dirEntry) {
-            if (value.type === HTML_TYPE) {
-              var html = replaceUrlsInHtml(value, resourceCache, hostName);
-              writeFile(dirEntry, getFileName(value.newFilePath), html);
-            } else if (value.type === BLOB_TYPE) {
-              // Uint8Array is mangled by the extension -> app communication to an index -> value map
-              var array = [];
-              for (var key in value.content) {
-                if (value.content.hasOwnProperty(key))
-                  array[key] = value.content[key];
-              }
-              writeFile(dirEntry, getFileName(value.newFilePath), new Uint8Array(array));
-            } else if (value.type === CSS_TYPE) {
-              // TODO(tlei): rewrite CSS
-              writeFile(dirEntry, getFileName(value.newFilePath), value.content);
-            }
-          });
-      })(url);
-    }
-  }
+function generateNavJsonFile(navTree) {
+  var recurse = function (node) {
+    var newNode = {
+      title: node.title,
+      isLeaf: node.isLeaf,
+      isRoot: node.isRoot
+    };
+
+    if (node.isLeaf)
+      newNode.url = makeFullPath(node.filePathArray);
+    else
+      newNode.children = node.children.map(recurse).filter(function (x) { return x !== null; });
+
+    return newNode;
+  };
+
+  return {
+    name: "nav.json",
+    content: JSON.stringify(recurse(navTree), null, 2)
+  };
 }
 
-function replaceUrlsInHtml(currentResource, resourceCache, hostName) {
+//function writeResourceFiles(dirEntry, resourceCache, hostName) {
+//  for (var url in resourceCache) {
+//    if (resourceCache.hasOwnProperty(url)) {
+//      (function (url) {
+//        var value = resourceCache[url];
+//        dirEntry.getDirectory(
+//          makeFullPath(getFolderPath(value.newFilePath)),
+//          { create: true },
+//          function (dirEntry) {
+//            if (value.type === HTML_TYPE) {
+//              var html = replaceUrlsInHtml(value, resourceCache, hostName);
+//              writeFile(dirEntry, getFileName(value.newFilePath), html);
+//            } else if (value.type === BLOB_TYPE) {
+//              // Uint8Array is mangled by the extension -> app communication to an index -> value map
+//              var array = [];
+//              for (var key in value.content) {
+//                if (value.content.hasOwnProperty(key))
+//                  array[key] = value.content[key];
+//              }
+//              writeFile(dirEntry, getFileName(value.newFilePath), new Uint8Array(array));
+//            } else if (value.type === CSS_TYPE) {
+//              // TODO(tlei): rewrite CSS
+//              writeFile(dirEntry, getFileName(value.newFilePath), value.content);
+//            }
+//          });
+//      })(url);
+//    }
+//  }
+//}
+
+function replaceUrlsInHtml(html, pageResourceEntry, resourceCache, hostName) {
   var hrefReplaced = replaceInHtml(
-        /(href\s?=\s?)(".+?"|'.+?')/,
-        currentResource.content,
-        currentResource,
-        resourceCache,
-        hostName);
-  var srcReplaced = replaceInHtml(
-        /(src\s?=\s?)(".+?"|'.+?')/,
-        hrefReplaced,
-        currentResource,
-        resourceCache,
-        hostName);
-  return srcReplaced;
+      /(href\s?=\s?)(".+?"|'.+?')/,
+      html,
+      pageResourceEntry,
+      resourceCache,
+      hostName);
+  return replaceInHtml(
+      /(src\s?=\s?)(".+?"|'.+?')/,
+      hrefReplaced,
+      pageResourceEntry,
+      resourceCache,
+      hostName);
 }
 
-function replaceInHtml(regex, html, currentResource, resourceCache, hostName) {
+function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName) {
   var match;
   var currentHtml = "";
   var remainingHtml = html;
@@ -147,17 +239,18 @@ function replaceInHtml(regex, html, currentResource, resourceCache, hostName) {
     var end = start + match[2].length;
     var matched = match[2].slice(1, -1); // remove the quotation marks
 
-    var resource = resourceCache[hostName + matched];
-    var relativePathArray = makeRelativePathArray(
-        getFolderPath(currentResource.newFilePath),
-        getFolderPath(resource.newFilePath));
-    relativePathArray.push(getFileName(resource.newFilePath));
+    var absoluteUrl = hostName + matched;
 
-    currentHtml += remainingHtml.slice(0, start)
-    if (resource !== undefined) {
+    currentHtml += remainingHtml.slice(0, start);
+    if (resourceCache.existsInCache(absoluteUrl)) {
+      var resourceEntry = resourceCache.get(absoluteUrl);
+      var relativePathArray = makeRelativePathArray(
+          getFolderPath(pageResourceEntry.newFilePath),
+          getFolderPath(resourceEntry.newFilePath));
+      relativePathArray.push(getFileName(resourceEntry.newFilePath));
       currentHtml += "'" + makeFullPath(relativePathArray) + "'";
     } else {
-      console.error("No resource found for url `" + hostName + matched + "`");
+      console.error("No resource found for url `" + absoluteUrl + "`");
       currentHtml += "'" + matched + "'";
     }
     remainingHtml = remainingHtml.slice(end);
@@ -167,24 +260,25 @@ function replaceInHtml(regex, html, currentResource, resourceCache, hostName) {
   return currentHtml;
 }
 
-function regexAllMatches(text, regex) {
-  var match;
-  var indices= [];
+function withFolder(dirEntry, folderPathArray, callback) {
+  var onNextFolder = function (index) {
+    if (index === folderPathArray.length) {
+      return callback;
+    } else {
+      return function (dirEntry) {
+        dirEntry.getDirectory(
+            folderPathArray[index],
+            {create: true},
+            onNextFolder(index + 1));
+      };
+    }
+  };
 
-  while (match = regex.exec(text)) {
-    var start = match.index + match[1].length;
-
-    indices.push({
-      start: start,
-      end: start + match[2].length,
-      matched: match[2].slice(1, -1) // remove the quotation marks
-    });
-  }
-  return indices;
+  onNextFolder(0)(dirEntry);
 }
 
-function writeFile(dirEntry, fileName, content) {
-  chrome.fileSystem.getWritableEntry(dirEntry, function(_) {
+function writeFile(dirEntry, fileName, content, onWriteSuccess, onWriteError) {
+  chrome.fileSystem.getWritableEntry(dirEntry, function() {
     dirEntry.getFile(
       fileName,
       { create: true },
@@ -195,6 +289,9 @@ function writeFile(dirEntry, fileName, content) {
             writer.truncate(writer.position);
             console.log("Writing to `" + fileName + "` successful!");
           };
+
+          writer.onwriteend = onWriteSuccess;
+          writer.onerror = onWriteError;
 
           writer.write(new Blob([ content ], { type: "" }));
         });
@@ -222,9 +319,10 @@ function makeRelativePathArray(currentPathArray, targetPathArray) {
   }
 
   var newPathArray = [];
-  for (var i = commonIndex; i < currentPathArray.length; i++)
+  var i;
+  for (i = commonIndex; i < currentPathArray.length; i++)
     newPathArray.push("..");
-  for (var i = commonIndex; i < targetPathArray.length; i++)
+  for (i = commonIndex; i < targetPathArray.length; i++)
     newPathArray.push(targetPathArray[i]);
   return newPathArray;
 }
