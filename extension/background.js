@@ -29,20 +29,25 @@ chrome.runtime.onMessageExternal.addListener(function (request, sender, sendResp
               localCacheMap: localCache.toMap()
             });
           });
+    } else if (request.type === "getMetadataCache") {
+      sendResponse({
+        metadataCache: resourceMetadataCache.toMap(),
+        resourceMetadataEntries: getResourceMetadataEntries()
+      });
+    } else if (request.type === "fetchResource") {
+      var success = downloadResource(request.resourceEntry, function (data) {
+        sendResponse({
+          data: data,
+          success: true
+        });
+      });
+
+      if (!success) {
+        sendResponse({
+          success: false
+        });
+      }
     }
-    //downloadEntireManual(function (headerTree, resourceCache) {
-    //  sendResponse({
-    //    hostName: TIS_HOST_NAME,
-    //    headerTree: headerTree,
-    //    resourceCache: resourceCache
-    //  });
-    //});
-    
-    // sendResponse({
-    //   hostName: testHostName,
-    //   headerTree: testNavTree,
-    //   resourceCache: testResourceCache
-    // });
     return true;
   }
 });

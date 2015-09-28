@@ -56,17 +56,12 @@ $("#saveButton").click(function () {
       var navJsonFile = generateNavJsonFile(navTreeRoot);
       writeFile(dirEntry, navJsonFile.name, navJsonFile.content);
 
-      requestManualAllPageData(dirEntry, hostName, navTreeRoot, function () { });
+      requestManualAllPageData(dirEntry, hostName, navTreeRoot, function () {
+        requestManualAllResourceData(dirEntry, hostName, function () {
+          console.log("Download complete!")
+        });
+      });
     });
-
-    //requestManualData(function (headerTree, resourceCache, hostName) {
-    //  chrome.fileSystem.getDisplayPath(fileEntry, function (path) {
-    //    console.log("Writing template files to `" + path + "`");
-    //  });
-    //
-
-    //  writeResourceFiles(fileEntry, resourceCache, hostName);
-    //});
   });
 });
 
@@ -117,11 +112,12 @@ function requestManualAllPageData(dirEntry, hostName, pageNavRoot, callback) {
 
   var recurseFn = function (entry) {
     if (entry.isLeaf) {
-      ajaxCount ++;
-      tempRunCount ++;
+      //tempRunCount ++;
 
-      if (tempRunCount < 2)
-      requestManualPageData(dirEntry, hostName, entry, finalCallback);
+      //if (tempRunCount < 999999) {
+        ajaxCount ++;
+        requestManualPageData(dirEntry, hostName, entry, finalCallback);
+      //}
     } else {
       entry.children.forEach(recurseFn);
     }
@@ -130,19 +126,70 @@ function requestManualAllPageData(dirEntry, hostName, pageNavRoot, callback) {
   recurseFn(pageNavRoot);
 }
 
+function requestManualAllResourceData(dirEntry, hostName, callback) {
+  var ajaxCount = 0;
+  var finalCallback = function () {
+    ajaxCount --;
+    if (ajaxCount === 0)
+      callback();
+  };
 
+  chrome.runtime.sendMessage(
+      extensionId,
+      { type: "getMetadataCache" },
+      function (response) {
+        console.log("Loading " + response.resourceMetadataEntries.length + " resource files...");
 
+        var metadataCache = new UrlCache(response.metadataCache);
 
+        response.resourceMetadataEntries.forEach(function (resEntry) {
+          ajaxCount ++;
+          chrome.runtime.sendMessage(
+              extensionId,
+              {
+                type: "fetchResource",
+                resourceEntry: resEntry
+              },
+              function (response) {
+                if (response.success) {
+                  var content;
 
-//function requestManualData(callback) {
-//  chrome.runtime.sendMessage(extensionId, {}, function (response) {
-//    var headerTree = response.headerTree;
-//    var resourceCache = response.resourceCache;
-//    var hostName = response.hostName;
-//    console.log("Data retrieval successful!");
-//    callback(headerTree, resourceCache, hostName);
-//  });
-//}
+                  if (resEntry.type === BLOB_TYPE) {
+                    var imgData = response.data;
+
+                    // Uint8Array is mangled by the extension -> app communication to an
+                    // index -> value map
+                    var array = [];
+                    for (var key in imgData) {
+                      if (imgData.hasOwnProperty(key))
+                        array[key] = imgData[key];
+                    }
+
+                    content = new Uint8Array(array);
+                  } else if (resEntry.type === CSS_TYPE) {
+                    var cssData = response.data;
+                    content = replaceUrlsInCss(cssData, resEntry, metadataCache, hostName);
+                  } else {
+                    content = response.textData;
+                  }
+
+                  withFolder(dirEntry, resEntry.folderPathArray, function (dirEntry) {
+                    writeFile(
+                        dirEntry,
+                        resEntry.fileName,
+                        content,
+                        finalCallback,
+                        finalCallback);
+                  });
+                } else {
+                  finalCallback();
+                }
+              });
+        });
+      });
+}
+
+// Template files
 
 function copyTemplateFiles(callback) {
   var copyFiles = [ "index.html", "index.css", "index.js", "jquery.js" ];
@@ -166,6 +213,7 @@ function generateNavJsonFile(navTree) {
   var recurse = function (node) {
     var newNode = {
       title: node.title,
+      shortTitle: node.shortTitle,
       isLeaf: node.isLeaf,
       isRoot: node.isRoot
     };
@@ -173,7 +221,10 @@ function generateNavJsonFile(navTree) {
     if (node.isLeaf)
       newNode.url = makeFullPath(node.filePathArray);
     else
-      newNode.children = node.children.map(recurse).filter(function (x) { return x !== null; });
+      newNode.children = node.children
+          .filter(fn.filterNotNull)
+          .map(recurse)
+          .filter(fn.filterNotNull);
 
     return newNode;
   };
@@ -214,6 +265,18 @@ function generateNavJsonFile(navTree) {
 //  }
 //}
 
+// HTML rewriting tools
+
+function replaceUrlsInCss(html, pageResourceEntry, resourceCache, hostName) {
+  return replaceInHtml(
+      /(url)(\(.+?\))/,
+      html,
+      pageResourceEntry,
+      resourceCache,
+      hostName,
+      { start: "(", end: ")" });
+}
+
 function replaceUrlsInHtml(html, pageResourceEntry, resourceCache, hostName) {
   var hrefReplaced = replaceInHtml(
       /(href\s?=\s?)(".+?"|'.+?')/,
@@ -229,7 +292,8 @@ function replaceUrlsInHtml(html, pageResourceEntry, resourceCache, hostName) {
       hostName);
 }
 
-function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName) {
+function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName, options) {
+  var opts = options || { start: "'", end: "'" };
   var match;
   var currentHtml = "";
   var remainingHtml = html;
@@ -237,9 +301,13 @@ function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName) 
   while (match = regex.exec(remainingHtml)) {
     var start = match.index + match[1].length;
     var end = start + match[2].length;
-    var matched = match[2].slice(1, -1); // remove the quotation marks
+    var matched = match[2].slice(opts.start.length, -opts.end.length); // remove the quotation marks
 
-    var absoluteUrl = hostName + matched;
+    var absoluteUrl;
+    if (matched.startsWith("/"))
+      absoluteUrl = simplifyUrl(hostName + matched);
+    else
+      absoluteUrl = simplifyUrl(extractUrlResourcePath(pageResourceEntry.fullUrl) + matched);
 
     currentHtml += remainingHtml.slice(0, start);
     if (resourceCache.existsInCache(absoluteUrl)) {
@@ -248,10 +316,10 @@ function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName) 
           getFolderPath(pageResourceEntry.newFilePath),
           getFolderPath(resourceEntry.newFilePath));
       relativePathArray.push(getFileName(resourceEntry.newFilePath));
-      currentHtml += "'" + makeFullPath(relativePathArray) + "'";
+      currentHtml += opts.start + makeFullPath(relativePathArray) + opts.end;
     } else {
       console.error("No resource found for url `" + absoluteUrl + "`");
-      currentHtml += "'" + matched + "'";
+      currentHtml += opts.start + matched + opts.end;
     }
     remainingHtml = remainingHtml.slice(end);
   }
@@ -259,6 +327,8 @@ function replaceInHtml(regex, html, pageResourceEntry, resourceCache, hostName) 
   currentHtml += remainingHtml;
   return currentHtml;
 }
+
+// File utils
 
 function withFolder(dirEntry, folderPathArray, callback) {
   var onNextFolder = function (index) {
@@ -288,9 +358,10 @@ function writeFile(dirEntry, fileName, content, onWriteSuccess, onWriteError) {
             writer.onwrite = null;
             writer.truncate(writer.position);
             console.log("Writing to `" + fileName + "` successful!");
+            if (onWriteSuccess)
+              onWriteSuccess();
           };
 
-          writer.onwriteend = onWriteSuccess;
           writer.onerror = onWriteError;
 
           writer.write(new Blob([ content ], { type: "" }));

@@ -1,8 +1,11 @@
 var TIS_HOST_NAME = "https://techinfo.toyota.com";
 var TIS_NAV_BASE_URL = TIS_HOST_NAME + "/t3Portal/resources/jsp/siviewer/";
-var startingPoint = "nav.jsp?"
-    + "dir=rm%2FRM30G0U&openSource=null&href=xhtml%2FRM1000000006BKQ.html&t3Id=RM1000000006BKQ&"
-    + "pubNo=RM30G0U&docId=1974527&objectType=rm&locale=en&home=null&docTitle=null&modelyear=2015";
+//var startingPoint = "nav.jsp?"
+//    + "dir=rm%2FRM30G0U&openSource=null&href=xhtml%2FRM1000000006BKQ.html&t3Id=RM1000000006BKQ&"
+//    + "pubNo=RM30G0U&docId=1974527&objectType=rm&locale=en&home=null&docTitle=null&modelyear=2015";
+var startingPoint = "nav.jsp?" +
+    "dir=ncf%2FNM30G0U&openSource=null&href=xhtml%2FNM10000000060CP.html&t3Id=NM10000000060CP&" +
+    "pubNo=NM30G0U&docId=1979880&objectType=ncf&locale=en&home=null&docTitle=null&modelyear=2015";
 var $bufferFrame = $("<div></div>");
 var navItemRegex = /var TREE_ITEMS = \[(.+?)\];/;
 var pageRedirectRegex = /location='(.+?)'\+location.hash/;
@@ -13,10 +16,17 @@ var HTML_RESOURCES_FOLDER = [ "pages", "resources" ];
 var IMG_FOLDER = [ "img" ];
 var CSS_FOLDER = [ "css" ];
 
+var MISSING_NAV_URLS = {
+  "Engine / Hybrid System": "nav.jsp?" +
+      "locale=en&dir=ncf%2FNM30G0U&modelyear=2015&pcd=06/2014-08/2015&startDate=201406&" +
+      "endDate=201508&docTitle=null&section=Engine+%2F+Hybrid+System&pcdChangeBack=null"
+};
+
 // Cache for checking which resources have loaded
 var resourceMetadataCache = new UrlCache();
 
 var imageFetcher = new ImageFetcher();
+var documentFetcher = new DocumentFetcher();
 
 function downloadEntireManual(callback) {
   downloadNavMetadata(function (navTree) {
@@ -33,7 +43,11 @@ function downloadNavMetadata(callback) {
     // level section to get the sub-sections. Once a sub-section is loaded, the entire sub-section
     // tree is populated at once.
     var allNavUrls = data.filter(arrayFilter).map(function (elem) {
-      return elem[1];
+      if (elem[1].length > 0)
+        return elem[1];
+      if (MISSING_NAV_URLS[elem[0]])
+        return MISSING_NAV_URLS[elem[0]];
+      throw "Nav entry `" + elem[0] + "` not found.";
     });
     var count = 0;
     // This request already fetches the first top-level section, and there is no need to fetch
@@ -85,9 +99,10 @@ function parseAllNavData(results, callback) {
 
       if (entry.isLeaf) {
         entry.folderPathArray = dirPathArray;
+        entry.shortTitle = simpleSectionName(entry.title);
         entry.fileName = name + ".html";
         var resEntry =
-            resourceMetadataCache.writeToCache(entry.url, HTML_TYPE, dirPathArray, entry.fileName);
+            resourceMetadataCache.writeToCache(entry.url, HTML_ARTICLE_TYPE, dirPathArray, entry.fileName);
         entry.filePathArray = resEntry.newFilePath;
       } else {
         entry.children = node.filter(arrayFilter).map(recurseTree(dirPathArray.concat([ name ])));
@@ -107,12 +122,41 @@ function parseAllNavData(results, callback) {
 
 // Page download ---------------------------------
 
+function downloadCssResourceMetadata(resourceEntry, localCache, callback) {
+  documentFetcher.addDocumentToQueue(
+      removeUrlQuery(resourceEntry.fullUrl),
+      function (results) {
+        var rootUrl = extractUrlResourcePath(resourceEntry.fullUrl);
+        var urlRegex = /url\((.+?)\)/g;
+        var match;
+
+        while (match = urlRegex.exec(results)) {
+          var absoluteUrl = simplifyUrl(rootUrl + match[1]);
+          if (!resourceMetadataCache.existsInCache(absoluteUrl)) {
+            var entry = resourceMetadataCache.writeToCache(
+                absoluteUrl, BLOB_TYPE, IMG_FOLDER, extractUrlResourceName(absoluteUrl));
+            localCache.set(absoluteUrl, entry);
+          } else {
+            localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
+          }
+          callback();
+        }
+      });
+}
+
 function downloadPageMetadata(pageNavEntry, callback) {
   var absoluteUrl = removeUrlQuery(pageNavEntry.url) + "?locale=en";
   var localCache = new UrlCache();
 
   var ajaxCallback = function (absoluteUrl, loadedPage) {
     var container = $("<div></div>");
+
+    var ajaxCount = 0;
+    var finalCallback = function () {
+      ajaxCount --;
+      if (ajaxCount === 0)
+        callback(loadedPage, entry, localCache);
+    };
 
     container.html(loadedPage);
 
@@ -137,6 +181,11 @@ function downloadPageMetadata(pageNavEntry, callback) {
           var entry = resourceMetadataCache.writeToCache(
               absoluteUrl, CSS_TYPE, CSS_FOLDER, extractUrlResourceName(url));
           localCache.set(absoluteUrl, entry);
+
+          ajaxCount ++;
+          downloadCssResourceMetadata(entry, localCache, function () {
+            finalCallback();
+          });
         } else {
           localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
         }
@@ -148,35 +197,60 @@ function downloadPageMetadata(pageNavEntry, callback) {
         var absoluteUrl = TIS_HOST_NAME + url;
         if (!resourceMetadataCache.existsInCache(absoluteUrl)) {
           var entry = resourceMetadataCache.writeToCache(
-              absoluteUrl, HTML_TYPE, HTML_RESOURCES_FOLDER, extractUrlResourceName(url));
+              absoluteUrl, HTML_RESOURCE_TYPE, HTML_RESOURCES_FOLDER, extractUrlResourceName(url));
           localCache.set(absoluteUrl, entry);
         } else {
           localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
         }
       });
 
-    // Write page to global cache, overwriting existing entries
-    var entry = resourceMetadataCache.writeToCache(
-        absoluteUrl, HTML_TYPE, pageNavEntry.folderPathArray, pageNavEntry.fileName);
-
-    entry.isLoaded = true;
-
-    localCache.set(absoluteUrl, entry);
-
-    callback(loadedPage, entry, localCache);
+    // No need to write page to global cache, since it has already been seeded with the nav entries
+    var entry = localCache.writeToCache(
+        absoluteUrl, HTML_ARTICLE_TYPE, pageNavEntry.folderPathArray, pageNavEntry.fileName);
+    ajaxCount ++;
+    finalCallback();
   };
 
-  $.ajax(absoluteUrl).done(function (results) {
+  documentFetcher.addDocumentToQueue(absoluteUrl, function (results) {
     // Not sure why they return an empty script with redirect url sometimes...
     var regexCheck = pageRedirectRegex.exec(results);
     if (regexCheck === null) {
       ajaxCallback(absoluteUrl, results);
     } else {
-      $.ajax(TIS_HOST_NAME + regexCheck[1]).done(function (results) {
+      documentFetcher.addDocumentToQueue(TIS_HOST_NAME + regexCheck[1], function (results) {
         ajaxCallback(TIS_HOST_NAME + regexCheck[1], results);
       });
     }
   });
+}
+
+// Resource loading
+
+function getResourceMetadataEntries() {
+  var resourceEntries = [];
+
+  resourceMetadataCache.forEach(function (key, value) {
+    if (value.type !== HTML_ARTICLE_TYPE)
+      resourceEntries.push(value);
+  });
+
+  return resourceEntries;
+}
+
+function downloadResource(resourceEntry, callback) {
+  if (resourceEntry.type === BLOB_TYPE) {
+    imageFetcher.addImageToQueue(resourceEntry.fullUrl, function (uint8Array) {
+      callback(uint8Array);
+    });
+    return true;
+  } else if (resourceEntry.type === CSS_TYPE) {
+    documentFetcher.addDocumentToQueue(resourceEntry.fullUrl, function (results) {
+      callback(results);
+    });
+    return true;
+  }
+
+  return false;
 }
 
 //function fetchPageData(absoluteUrl, newFolderPath, callback) {
@@ -311,26 +385,17 @@ function unique(urls) {
   });
 }
 
-function blobGetRequest(url, callback) {
-  var xhr = new XMLHttpRequest();
-  xhr.open("GET", url, true);
-  xhr.responseType = "arraybuffer";
-
-  xhr.onload = function() {
-    // response is unsigned 8 bit integer
-    callback(new Uint8Array(this.response));
-  };
-   
-  xhr.send();
+function simpleSectionName(name) {
+  var scIndex = name.indexOf(";");
+  if (scIndex !== -1)
+    name = name.slice(0, scIndex);
+  return name;
 }
 
 function formatSectionNameForUrl(name) {
   // change to lower case, remove anything after a ';' character, replace spaces, and remove all
   // non alpha-numeric characters
-  var scIndex = name.indexOf(";");
-  if (scIndex !== -1)
-    name = name.slice(0, scIndex);
-  return name.toLowerCase().replace(/ /g, "_").replace(/\W/g, '');
+  return simpleSectionName(name).toLowerCase().replace(/ /g, "_").replace(/\W/g, '');
 }
 
 /**

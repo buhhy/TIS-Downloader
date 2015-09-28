@@ -27,11 +27,13 @@ body {
   flex-direction: row;
   flex-grow: 1;
   width: 100%;
+  height: 0; /* flexbox scrollbars */
 }
 
 .left-nav {
-  width: 20em;
+  width: 25%;
   background-color: #eaeaea;
+  overflow: auto;
 }
 
 .content-container {

@@ -16,12 +16,16 @@ UrlCache.prototype.processUrl = function (absoluteUrl) {
 };
 
 UrlCache.prototype.writeToCache = function (absoluteUrl, type, newFolderPathArray, newFileName) {
+  var simpleUrl = this.processUrl(absoluteUrl);
   var entry = {
     type: type,
-    isLoaded: false,
-    newFilePath: newFolderPathArray.concat([ newFileName ])
+    folderPathArray: newFolderPathArray,
+    fileName: newFileName,
+    newFilePath: newFolderPathArray.concat([ newFileName ]),
+    fullUrl: absoluteUrl,
+    simpleUrl: simpleUrl
   };
-  this.map[this.processUrl(absoluteUrl)] = entry;
+  this.map[simpleUrl] = entry;
   return entry;
 };
 
@@ -50,4 +54,11 @@ UrlCache.prototype.toMap = function () {
 
 UrlCache.prototype.size = function () {
   return this.map.keys().length;
+};
+
+UrlCache.prototype.forEach = function (fn) {
+  for (var url in this.map) {
+    if (this.map.hasOwnProperty(url))
+      fn(url, this.map[url]);
+  }
 };

@@ -19,7 +19,7 @@ function renderNavNodeRecursive(node) {
     var $leaf = $(document.importNode(leafTemplate.content, true));
     var $titleLink = $leaf.find("[data-id='navItemTitle']");
 
-    $titleLink.text(node.title);
+    $titleLink.text(node.shortTitle);
     $titleLink.attr("href", node.url);
 
     return $leaf;
