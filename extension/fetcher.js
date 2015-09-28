@@ -1,11 +1,20 @@
 var TIS_HOST_NAME = "https://techinfo.toyota.com";
 var TIS_NAV_BASE_URL = TIS_HOST_NAME + "/t3Portal/resources/jsp/siviewer/";
-//var startingPoint = "nav.jsp?"
-//    + "dir=rm%2FRM30G0U&openSource=null&href=xhtml%2FRM1000000006BKQ.html&t3Id=RM1000000006BKQ&"
-//    + "pubNo=RM30G0U&docId=1974527&objectType=rm&locale=en&home=null&docTitle=null&modelyear=2015";
-var startingPoint = "nav.jsp?" +
-    "dir=ncf%2FNM30G0U&openSource=null&href=xhtml%2FNM10000000060CP.html&t3Id=NM10000000060CP&" +
-    "pubNo=NM30G0U&docId=1979880&objectType=ncf&locale=en&home=null&docTitle=null&modelyear=2015";
+/**
+ * Starting point for repair manual.
+ * @type {string}
+ */
+var startingPoint = "nav.jsp?"
+    + "dir=rm%2FRM30G0U&openSource=null&href=xhtml%2FRM1000000006BKQ.html&t3Id=RM1000000006BKQ&"
+    + "pubNo=RM30G0U&docId=1974527&objectType=rm&locale=en&home=null&docTitle=null&modelyear=2015";
+
+/**
+ * Starting point for new features manual.
+ * @type {string}
+ */
+//var startingPoint = "nav.jsp?" +
+//    "dir=ncf%2FNM30G0U&openSource=null&href=xhtml%2FNM10000000060CP.html&t3Id=NM10000000060CP&" +
+//    "pubNo=NM30G0U&docId=1979880&objectType=ncf&locale=en&home=null&docTitle=null&modelyear=2015";
 var $bufferFrame = $("<div></div>");
 var navItemRegex = /var TREE_ITEMS = \[(.+?)\];/;
 var pageRedirectRegex = /location='(.+?)'\+location.hash/;
@@ -47,7 +56,9 @@ function downloadNavMetadata(callback) {
         return elem[1];
       if (MISSING_NAV_URLS[elem[0]])
         return MISSING_NAV_URLS[elem[0]];
-      throw "Nav entry `" + elem[0] + "` not found.";
+      if (elem.length === 3)
+        throw "Nav entry `" + elem[0] + "` not found.";
+      return "";
     });
     var count = 0;
     // This request already fetches the first top-level section, and there is no need to fetch
@@ -144,6 +155,85 @@ function downloadCssResourceMetadata(resourceEntry, localCache, callback) {
       });
 }
 
+function downloadResourcePageMetadata(resourceEntry, localCache, callback) {
+  var absoluteUrl = removeUrlQuery(resourceEntry.fullUrl) + "?locale=en";
+
+  var ajaxCallback = function (absoluteUrl, loadedPage) {
+    var container = $("<div></div>");
+
+    var ajaxCount = 0;
+    var finalCallback = function () {
+      ajaxCount --;
+      if (ajaxCount === 0)
+        callback(loadedPage, entry, localCache);
+    };
+
+    container.html(loadedPage);
+
+    // Check for and load missing resources as blobs
+    unique(container.find("img[src*='/']").map(jqAttrMap("src")).toArray()).forEach(
+        function (url) {
+          var absoluteUrl = TIS_HOST_NAME + url;
+          if (!resourceMetadataCache.existsInCache(absoluteUrl)) {
+            var entry = resourceMetadataCache.writeToCache(
+                absoluteUrl, BLOB_TYPE, IMG_FOLDER, extractUrlResourceName(url));
+            localCache.set(absoluteUrl, entry);
+          } else {
+            localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
+          }
+        });
+
+    // Check for and load missing css
+    unique(container.find("link[href*='/']").map(jqAttrMap("href")).toArray()).forEach(
+        function (url) {
+          var absoluteUrl = TIS_HOST_NAME + url;
+          if (!resourceMetadataCache.existsInCache(absoluteUrl)) {
+            var entry = resourceMetadataCache.writeToCache(
+                absoluteUrl, CSS_TYPE, CSS_FOLDER, extractUrlResourceName(url));
+            localCache.set(absoluteUrl, entry);
+
+            ajaxCount ++;
+            downloadCssResourceMetadata(entry, localCache, function () {
+              finalCallback();
+            });
+          } else {
+            localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
+          }
+        });
+
+    // Check for and load missing links
+    unique(container.find("a[href*='/']").map(jqAttrMap("href")).toArray()).forEach(
+        function (url) {
+          var absoluteUrl = TIS_HOST_NAME + url;
+          if (!resourceMetadataCache.existsInCache(absoluteUrl)) {
+            var entry = resourceMetadataCache.writeToCache(
+                absoluteUrl, HTML_RESOURCE_TYPE, HTML_RESOURCES_FOLDER, extractUrlResourceName(url));
+            localCache.set(absoluteUrl, entry);
+          } else {
+            localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
+          }
+        });
+
+    // No need to write page to global cache, since it has already been seeded with the nav entries
+    var entry = localCache.writeToCache(
+        absoluteUrl, HTML_ARTICLE_TYPE, resourceEntry.folderPathArray, resourceEntry.fileName);
+    ajaxCount ++;
+    finalCallback();
+  };
+
+  documentFetcher.addDocumentToQueue(absoluteUrl, function (results) {
+    // Not sure why they return an empty script with redirect url sometimes...
+    var regexCheck = pageRedirectRegex.exec(results);
+    if (regexCheck === null) {
+      ajaxCallback(absoluteUrl, results);
+    } else {
+      documentFetcher.addDocumentToQueue(TIS_HOST_NAME + regexCheck[1], function (results) {
+        ajaxCallback(TIS_HOST_NAME + regexCheck[1], results);
+      });
+    }
+  });
+}
+
 function downloadPageMetadata(pageNavEntry, callback) {
   var absoluteUrl = removeUrlQuery(pageNavEntry.url) + "?locale=en";
   var localCache = new UrlCache();
@@ -199,6 +289,11 @@ function downloadPageMetadata(pageNavEntry, callback) {
           var entry = resourceMetadataCache.writeToCache(
               absoluteUrl, HTML_RESOURCE_TYPE, HTML_RESOURCES_FOLDER, extractUrlResourceName(url));
           localCache.set(absoluteUrl, entry);
+
+          ajaxCount ++;
+          downloadResourcePageMetadata(entry, localCache, function () {
+            finalCallback();
+          });
         } else {
           localCache.set(absoluteUrl, resourceMetadataCache.get(absoluteUrl));
         }
@@ -244,6 +339,11 @@ function downloadResource(resourceEntry, callback) {
     });
     return true;
   } else if (resourceEntry.type === CSS_TYPE) {
+    documentFetcher.addDocumentToQueue(resourceEntry.fullUrl, function (results) {
+      callback(results);
+    });
+    return true;
+  } else if (resourceEntry.type == HTML_RESOURCE_TYPE) {
     documentFetcher.addDocumentToQueue(resourceEntry.fullUrl, function (results) {
       callback(results);
     });

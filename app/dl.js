@@ -106,6 +106,7 @@ function requestManualAllPageData(dirEntry, hostName, pageNavRoot, callback) {
 
   var finalCallback = function () {
     ajaxCount --;
+    console.log(ajaxCount);
     if (ajaxCount === 0)
       callback();
   };
@@ -169,6 +170,9 @@ function requestManualAllResourceData(dirEntry, hostName, callback) {
                   } else if (resEntry.type === CSS_TYPE) {
                     var cssData = response.data;
                     content = replaceUrlsInCss(cssData, resEntry, metadataCache, hostName);
+                  } else if (resEntry.type === HTML_RESOURCE_TYPE) {
+                    var htmlData = response.data;
+                    content = replaceUrlsInHtml(htmlData, resEntry, metadataCache, hostName);
                   } else {
                     content = response.textData;
                   }
